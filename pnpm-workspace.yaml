@@ -1,0 +1,4 @@
+onlyBuiltDependencies:
+  - esbuild
+# Quarantaine de 7 jours (en minutes) avant d’adopter une nouvelle version publiée (docs/09 §4).
+minimumReleaseAge: 10080

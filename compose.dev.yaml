@@ -1,0 +1,18 @@
+# Base de données de développement uniquement (la pile de production est dans deploy/).
+# docker compose -f compose.dev.yaml up -d
+name: maieutik-dev
+
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: maieutik
+      POSTGRES_PASSWORD: maieutik
+      POSTGRES_DB: maieutik
+    ports:
+      - '127.0.0.1:5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+volumes:
+  pgdata: {}
