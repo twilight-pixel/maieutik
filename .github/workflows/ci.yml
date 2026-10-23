@@ -76,6 +76,12 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # Les modules Paraglide (src/lib/paraglide, ignorés par git) ne sont générés que par le
+      # plugin Vite au build : svelte-check les exige. Mêmes options que dans vite.config.ts.
+      - name: Génération des messages Paraglide
+        run: >-
+          pnpm exec paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide
+          --strategy url preferredLanguage baseLocale --emit-ts-declarations --silent
       - run: pnpm lint
       - run: pnpm check
       - run: pnpm test:unit --run
@@ -347,4 +353,10 @@ jobs:
           fi
       - name: Journaux des conteneurs
         if: failure()
-        run: docker compose -f deploy/compose.yaml logs --no-color --tail 200
+        run: |
+          # La pile n'a peut-être pas démarré (échec en amont) : variables absentes, rien à montrer.
+          if [[ -z ${MAIEUTIK_IMAGE:-} ]]; then
+            echo "Pile non démarrée : pas de journaux."
+            exit 0
+          fi
+          docker compose -f deploy/compose.yaml logs --no-color --tail 200
