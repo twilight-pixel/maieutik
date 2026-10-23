@@ -1,0 +1,10 @@
+# Surcharge pour la CI uniquement (job e2e) : JAMAIS en production.
+# Expose Postgres sur la boucle locale du runner pour l'application lancée hors conteneur.
+services:
+  db:
+    ports: ['127.0.0.1:5432:5432']
+
+networks:
+  # Docker ne publie pas de port sur un réseau « internal ».
+  data:
+    internal: false

@@ -1,0 +1,16 @@
+# Service onion Maieutik (D10). Actif dès le lancement.
+SocksPort 0
+Log notice stdout
+DataDirectory /var/lib/tor
+
+HiddenServiceDir /var/lib/tor/maieutik/
+# Tor n'accepte pas de nom d'hôte ici : IP fixe de Caddy sur le réseau « proxy » (compose.yaml).
+HiddenServicePort 80 172.30.10.10:8081
+# Défense anti-DoS par preuve de travail côté client (Tor ≥ 0.4.8).
+HiddenServicePoWDefensesEnabled 1
+
+# Option à étudier : le serveur est déjà public par la voie clearnet, cacher sa localisation
+# n'apporte rien. Un « single onion service » réduit la latence sans affaiblir l'anonymat des
+# lecteurs. Nécessite :
+#   HiddenServiceNonAnonymousMode 1
+#   HiddenServiceSingleHopMode 1

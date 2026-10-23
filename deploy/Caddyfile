@@ -1,0 +1,51 @@
+# Serveur frontal Maieutik. Vérifié en CI par scripts/ci/check-caddy-config.mjs.
+# Aucun journal : ni accès, ni erreurs (les erreurs contiennent l'adresse du client).
+# Les en-têtes de sécurité (CSP, Referrer-Policy...) sont posés par l'application,
+# pour être identiques sur l'accès clearnet et sur l'accès onion.
+
+{
+	log default {
+		output discard
+	}
+	# Pas d'option `email` : le compte ACME resterait lié à un opérateur (D02).
+	admin off
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+(proxy_app) {
+	# Interface du robot d'archivage : jamais exposée, ni en clearnet ni en onion (D15).
+	# `respond` passe avant `reverse_proxy` dans l'ordre des directives de Caddy.
+	respond /internal* 404
+	reverse_proxy app:3000 {
+		# Caddy ajoute X-Forwarded-For par défaut : l'application ne doit jamais voir l'IP.
+		header_up -X-Forwarded-For
+		header_up -X-Real-IP
+		header_up -Forwarded
+	}
+}
+
+{$MAIEUTIK_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 10MB
+	}
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains"
+		Onion-Location "http://{$MAIEUTIK_ONION}{uri}"
+		-Server
+	}
+	import proxy_app
+}
+
+# Accès onion : le démon Tor se connecte ici en HTTP, le chiffrement est assuré par Tor.
+# Ce port n'est pas publié sur l'hôte, seul le réseau Docker « proxy » l'atteint.
+http://:8081 {
+	encode zstd gzip
+	request_body {
+		max_size 10MB
+	}
+	header -Server
+	import proxy_app
+}

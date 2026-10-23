@@ -1,0 +1,150 @@
+# Règles Semgrep propres à Maieutik : invariants de vie privée et de sécurité (docs/09 §3).
+# Tests : semgrep --test .semgrep/   (fichiers maieutik.ts et maieutik.svelte)
+# Exception justifiée : commentaire `// nosemgrep: <id>` + motif, relu par CODEOWNERS.
+
+rules:
+  # --- I1 : l'application ne lit jamais l'adresse IP du client ---------------
+  - id: maieutik-no-client-address
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Lecture de l'adresse IP du client. La plateforme ne connaît pas l'IP (D01, docs/03) :
+      ni journal, ni limite de débit par IP (D10). Limiter par clé et par preuve de travail.
+    pattern-either:
+      - pattern: $EVENT.getClientAddress()
+      - pattern: $REQ.socket.remoteAddress
+      - pattern: $REQ.connection.remoteAddress
+      - pattern: $REQ.headers.get("=~/(?i)^(x-forwarded-for|x-real-ip|forwarded|cf-connecting-ip|true-client-ip)$/")
+      - pattern: $REQ.headers["=~/(?i)^(x-forwarded-for|x-real-ip|forwarded|cf-connecting-ip|true-client-ip)$/"]
+
+  - id: maieutik-no-address-header-config
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      ADDRESS_HEADER / XFF_DEPTH font lire l'IP client à adapter-node (event.getClientAddress).
+      Interdit par l'invariant I1.
+    paths:
+      include: ['*.yaml', '*.yml', 'Dockerfile', '*.env', '*.env.*', '*.ts', '*.js']
+    pattern-regex: \b(ADDRESS_HEADER|XFF_DEPTH)\s*[:=]
+
+  # --- I4 : aucun HTML brut (le contenu est rendu à partir des blocs) -------
+  - id: maieutik-no-raw-html-svelte
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      {@html} injecte du HTML brut : une XSS sur ce site permet de voler les clés des auteurs.
+      Rendre à partir des blocs (docs/06). Seule exception prévue : la sortie KaTeX, dans son
+      composant dédié, avec nosemgrep et revue.
+    paths:
+      include: ['*.svelte']
+    pattern-regex: \{@html\b
+
+  - id: maieutik-no-raw-html-dom
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Écriture de HTML brut dans le DOM : risque de XSS, donc de vol de clé.
+    pattern-either:
+      - pattern: $EL.innerHTML = $X
+      - pattern: $EL.outerHTML = $X
+      - pattern: $EL.insertAdjacentHTML(...)
+      - pattern: document.write(...)
+      - pattern: document.writeln(...)
+
+  - id: maieutik-no-dynamic-code
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: Exécution de code dynamique, interdite par la CSP (pas de 'unsafe-eval').
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: setTimeout("...", ...)
+      - pattern: setInterval("...", ...)
+
+  # --- Aléa : clés, nonces, preuve de travail, délai de publication (D09) ----
+  - id: maieutik-no-math-random
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Math.random() est prévisible. Le délai aléatoire de publication (D09), les nonces et les
+      tirages (jury) exigent crypto.getRandomValues() ou crypto.randomInt().
+    pattern: Math.random()
+
+  # --- Frontière cryptographique : un seul paquet audité --------------------
+  - id: maieutik-crypto-boundary
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Les primitives cryptographiques ne s'importent que dans src/lib/shared (code de
+      signature partagé client/serveur), relu par deux mainteneurs (CODEOWNERS). Passer par
+      son API.
+    paths:
+      exclude: ['/src/lib/shared/**']
+    pattern-either:
+      - pattern: import "=~/^(@noble\/|@scure\/|libsodium)/"
+      - pattern: import $X from "=~/^(@noble\/|@scure\/|libsodium)/"
+      - pattern: import {...} from "=~/^(@noble\/|@scure\/|libsodium)/"
+      - pattern: import * as $X from "=~/^(@noble\/|@scure\/|libsodium)/"
+      - pattern: import("=~/^(@noble\/|@scure\/|libsodium)/")
+      - pattern: require("=~/^(@noble\/|@scure\/|libsodium)/")
+
+  # --- I3 : aucune ressource externe dans le code source ---------------------
+  - id: maieutik-no-external-fetch
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Requête vers une URL absolue : aucun service tiers (D10), et liens relatifs pour l'onion.
+      L'archivage des sources (phase 2) passe par son conteneur isolé (docs/08).
+    pattern-either:
+      - pattern: fetch("=~/^(https?:)?\/\//", ...)
+      - pattern: new WebSocket("=~/^(wss?:)?\/\//", ...)
+      - pattern: new EventSource("=~/^(https?:)?\/\//", ...)
+      - pattern: navigator.sendBeacon(...)
+
+  - id: maieutik-no-external-resource-markup
+    languages: [generic]
+    severity: ERROR
+    message: >-
+      Ressource externe dans un gabarit ou une feuille de style : elle divulgue l'IP du
+      lecteur (docs/03). Héberger la ressource et utiliser un chemin relatif.
+    paths:
+      include: ['*.svelte', '*.html', '*.css']
+    pattern-either:
+      - pattern-regex: \b(src|srcset|poster|action|formaction)\s*=\s*["']?(https?:)?//
+      - pattern-regex: <link\b[^>]*\bhref\s*=\s*["']?(https?:)?//
+      - pattern-regex: url\(\s*["']?(https?:)?//
+      - pattern-regex: '@import\s+(url\()?\s*["'']?(https?:)?//'
+
+  # --- I5 : aucune heure affichée (D09) --------------------------------------
+  - id: maieutik-no-time-display
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Affichage d'une heure. Seules les dates sont exposées (D09) : l'heure permet de
+      recouper des pseudonymes d'une même personne.
+    pattern-either:
+      - pattern: $D.toLocaleTimeString(...)
+      - pattern: $D.toTimeString()
+      - pattern: 'new Intl.DateTimeFormat($L, {..., hour: $H, ...})'
+      - pattern: 'new Intl.DateTimeFormat($L, {..., timeStyle: $T, ...})'
+      - pattern: '$D.toLocaleString($L, {..., hour: $H, ...})'
+      - pattern: '$D.toLocaleString($L, {..., timeStyle: $T, ...})'
+
+  # --- I11 : journaux applicatifs sans données de requête --------------------
+  - id: maieutik-no-request-logging
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: >-
+      Journalisation d'en-têtes ou d'une requête entière : User-Agent, cookies et en-têtes
+      transmis peuvent identifier un lecteur. Journaliser un message et un code d'erreur.
+    patterns:
+      - pattern-either:
+          - pattern: $LOGGER.$F(..., <... $X.headers ...>, ...)
+          - pattern: $LOGGER.$F(..., <... $X.request ...>, ...)
+          - pattern: $LOGGER.$F(..., <... $X.getClientAddress() ...>, ...)
+      - metavariable-regex:
+          metavariable: $LOGGER
+          regex: ^(console|log|logger|this\.logger)$
+      - metavariable-regex:
+          metavariable: $F
+          regex: ^(log|info|warn|error|debug|trace|fatal)$

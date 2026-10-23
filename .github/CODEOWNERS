@@ -1,0 +1,30 @@
+# Relecteurs obligatoires (docs/09 §5). Avec la protection de branche « Require review from
+# Code Owners », toute modification d'une zone sensible exige l'accord de l'équipe sécurité.
+# Remplacer les équipes ci-dessous par les vrais identifiants (pseudonymes) une fois le dépôt créé.
+
+*                               @maieutik/mainteneurs
+
+# Cryptographie, signature, canonicalisation : une erreur ici compromet toutes les identités.
+/src/lib/shared/                @maieutik/securite
+# En-têtes de sécurité, CSP, configuration de build.
+/src/hooks.server.ts            @maieutik/securite
+# Seule exception au « jamais de HTML brut » (KaTeX), et code persistant dans le navigateur.
+/src/lib/components/Math.svelte @maieutik/securite
+/src/lib/math.ts                @maieutik/securite
+/src/service-worker.ts          @maieutik/securite
+/vite.config.ts                 @maieutik/securite
+# Chaîne d'approvisionnement : toute nouvelle dépendance est relue.
+/package.json                   @maieutik/securite
+/pnpm-lock.yaml                 @maieutik/securite
+/pnpm-workspace.yaml            @maieutik/securite
+/.npmrc                         @maieutik/securite
+# Pipeline, contrôles, déploiement.
+/.github/                       @maieutik/securite
+/scripts/ci/                    @maieutik/securite
+/.semgrep/                      @maieutik/securite
+/.semgrepignore                 @maieutik/securite
+/.gitleaks.toml                 @maieutik/securite
+/Dockerfile                     @maieutik/securite
+/deploy/                        @maieutik/securite
+/db/migrations/                 @maieutik/securite
+/SECURITY.md                    @maieutik/securite

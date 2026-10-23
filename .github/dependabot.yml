@@ -1,0 +1,46 @@
+# Mises à jour de dépendances (docs/09 §4).
+# Quarantaine de 7 jours : la plupart des versions npm piégées sont retirées en quelques jours.
+# Les mises à jour de sécurité ne sont pas soumises à ce délai.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 10
+    groups:
+      outils-dev:
+        dependency-type: development
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']
+
+  # Images de base (Dockerfile, deploy/tor) et outils de CI (.github/tools/Dockerfile).
+  - package-ecosystem: docker
+    directories: [/, /deploy/tor, /.github/tools]
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: docker-compose
+    directory: /deploy
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 7

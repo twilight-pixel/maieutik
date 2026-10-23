@@ -1,0 +1,214 @@
+# Pile de production Maieutik : un seul serveur (D10). Voir docs/10-ci-cd.md.
+#
+# Variables (fichier /etc/maieutik/deploy.env, écrit par deploy.sh) :
+#   MAIEUTIK_IMAGE        image de l'application, toujours par digest (ghcr.io/...@sha256:...)
+#   MAIEUTIK_DOMAIN       domaine public
+#   MAIEUTIK_ONION        adresse .onion (lue dans tor_data après le premier démarrage)
+#   MAIEUTIK_SECRETS_DIR  dossier des secrets, mode 0400 (défaut /etc/maieutik/secrets) :
+#                           db_password (mot de passe seul), session_key (clé HMAC aléatoire),
+#                           archiver_token (jeton aléatoire du robot d'archivage)
+#   MAIEUTIK_REFERENT_KEYS clés publiques des référents, séparées par des virgules
+#   MAIEUTIK_TEAM_KEYS     clés publiques des pseudonymes d'équipe (facultatif, D18)
+#   MAIEUTIK_INVITATIONS_REQUIRED  « true » : inscription sur invitation (facultatif, D18)
+#
+# Réseaux : l'application n'a AUCUN accès sortant (invariant I13). Seuls Caddy, Tor et le
+# robot d'archivage parlent à Internet. Postgres n'est joignable que par l'application.
+
+name: maieutik
+
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ['no-new-privileges:true']
+  restart: unless-stopped
+
+services:
+  app:
+    <<: *hardening
+    image: ${MAIEUTIK_IMAGE:?MAIEUTIK_IMAGE doit être défini (image par digest)}
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      # Hôte et protocole fournis par Caddy : un seul ORIGIN casserait l'accès onion.
+      PROTOCOL_HEADER: x-forwarded-proto
+      HOST_HEADER: x-forwarded-host
+      # Ne JAMAIS définir ADDRESS_HEADER ni XFF_DEPTH (lecture de l'IP client).
+      BODY_SIZE_LIMIT: 10M
+      # Connexion : src/lib/server/db-options.ts. Le mot de passe reste dans un fichier,
+      # jamais dans l'environnement (visible par docker inspect).
+      PGHOST: db
+      PGUSER: maieutik
+      PGDATABASE: maieutik
+      DATABASE_PASSWORD_FILE: /run/secrets/db_password
+      # Clé HMAC des preuves de travail (src/lib/shared/pow.ts).
+      SESSION_KEY_FILE: /run/secrets/session_key
+      # Clés publiques des référents juridiques (docs/05) : pas un secret.
+      REFERENT_KEYS: ${MAIEUTIK_REFERENT_KEYS:-}
+      # Démarrage (D18) : pseudonymes d'équipe identifiés comme tels, inscription sur invitation.
+      TEAM_KEYS: ${MAIEUTIK_TEAM_KEYS:-}
+      INVITATIONS_REQUIRED: ${MAIEUTIK_INVITATIONS_REQUIRED:-false}
+      # Jeton de l'interface /internal/archive (robot d'archivage, D15).
+      ARCHIVER_TOKEN_FILE: /run/secrets/archiver_token
+    secrets: [db_password, session_key, archiver_token]
+    tmpfs: [/tmp]
+    pids_limit: 256
+    mem_limit: 1g
+    networks: [proxy, data, archive]
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          'CMD',
+          '/nodejs/bin/node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/healthz').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    logging: &applogs
+      driver: local
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  # Migrations, lancées par deploy.sh avant le démarrage de la nouvelle version.
+  migrate:
+    <<: *hardening
+    image: ${MAIEUTIK_IMAGE:?MAIEUTIK_IMAGE doit être défini}
+    profiles: [tools]
+    restart: 'no'
+    command: ['scripts/migrate.ts']
+    environment:
+      PGHOST: db
+      PGUSER: maieutik
+      PGDATABASE: maieutik
+      DATABASE_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    networks: [data]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    <<: *hardening
+    image: postgres:18-trixie@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
+    # L'entrypoint officiel a besoin de ces capacités pour initialiser le volume.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    command:
+      - postgres
+      - -c
+      - log_connections=off
+      - -c
+      - log_disconnections=off
+      - -c
+      - log_hostname=off
+      - -c
+      - log_statement=none
+    environment:
+      POSTGRES_USER: maieutik
+      POSTGRES_DB: maieutik
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    secrets: [db_password]
+    tmpfs: [/tmp, /var/run/postgresql]
+    shm_size: 256m
+    volumes:
+      - pgdata:/var/lib/postgresql
+    networks: [data]
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'maieutik', '-d', 'maieutik']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *applogs
+
+  caddy:
+    <<: *hardening
+    image: caddy:2-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
+    cap_add: [NET_BIND_SERVICE]
+    environment:
+      MAIEUTIK_DOMAIN: ${MAIEUTIK_DOMAIN:?MAIEUTIK_DOMAIN doit être défini}
+      MAIEUTIK_ONION: ${MAIEUTIK_ONION:-}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      edge: {}
+      proxy:
+        ipv4_address: 172.30.10.10
+    depends_on:
+      app:
+        condition: service_healthy
+    # Après chargement de la config, Caddy discarde tout ; seuls restent les messages de
+    # démarrage (erreurs de configuration), sans données de requête.
+    logging: *applogs
+
+  # Robot d'archivage des sources (D15, docs/08 « Points délicats ») : seul conteneur, avec
+  # Caddy et Tor, à sortir vers Internet. Il ne voit ni Postgres (pas de réseau « data »), ni
+  # Caddy, ni Tor : son accès Internet passe par un réseau qui n'est qu'à lui.
+  archiver:
+    <<: *hardening
+    image: ${MAIEUTIK_IMAGE:?MAIEUTIK_IMAGE doit être défini}
+    command: ['scripts/archiver.ts']
+    environment:
+      APP_URL: http://app:3000
+      ARCHIVER_TOKEN_FILE: /run/secrets/archiver_token
+    secrets: [archiver_token]
+    pids_limit: 64
+    mem_limit: 256m
+    networks: [archive, archive_egress]
+    depends_on:
+      app:
+        condition: service_healthy
+    logging: *applogs
+
+  tor:
+    <<: *hardening
+    profiles: [onion]
+    build: ./tor
+    image: maieutik-tor:local
+    volumes:
+      # Contient la clé privée du service onion : à sauvegarder hors ligne (docs/10).
+      - tor_data:/var/lib/tor
+    tmpfs: [/tmp]
+    networks: [edge, proxy]
+    depends_on: [caddy]
+    logging: *applogs
+
+secrets:
+  db_password:
+    file: ${MAIEUTIK_SECRETS_DIR:-/etc/maieutik/secrets}/db_password
+  session_key:
+    file: ${MAIEUTIK_SECRETS_DIR:-/etc/maieutik/secrets}/session_key
+  archiver_token:
+    file: ${MAIEUTIK_SECRETS_DIR:-/etc/maieutik/secrets}/archiver_token
+
+networks:
+  edge: {}
+  proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.10.0/24
+  data:
+    internal: true
+  # Application <-> robot, sans sortie.
+  archive:
+    internal: true
+  # Sortie Internet du robot seul. IPv4 uniquement (défaut de Docker) : aucune adresse IPv6
+  # n'est joignable, ce qui ferme aussi les formes IPv6 qui encapsulent une IPv4 interne.
+  archive_egress: {}
+
+volumes:
+  pgdata: {}
+  caddy_data: {}
+  caddy_config: {}
+  tor_data: {}

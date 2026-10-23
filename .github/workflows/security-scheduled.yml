@@ -1,0 +1,50 @@
+# Analyses planifiées : de nouvelles vulnérabilités sont publiées chaque jour sur du code
+# qui, lui, n'a pas changé. Voir docs/09 §6 (délais de correction).
+name: Sécurité planifiée
+
+on:
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  dependances:
+    name: Dépendances (OSV)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: scripts/ci/tool.sh osv-scanner scan -L pnpm-lock.yaml
+
+  image-en-production:
+    name: Image de la dernière release (Trivy)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Dernière release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(gh release view --json tagName -q .tagName 2>/dev/null || true)
+          if [[ -z $tag ]]; then echo "Aucune release publiée."; exit 0; fi
+          gh release download "$tag" -p image-digest.txt
+          echo "image=ghcr.io/${GITHUB_REPOSITORY,,}@$(cat image-digest.txt)" >>"$GITHUB_OUTPUT"
+      - name: Scan
+        if: steps.release.outputs.image != ''
+        env:
+          IMAGE: ${{ steps.release.outputs.image }}
+        run: >-
+          scripts/ci/tool.sh trivy image --exit-code 1 --severity HIGH,CRITICAL
+          --ignore-unfixed --no-progress "$IMAGE"

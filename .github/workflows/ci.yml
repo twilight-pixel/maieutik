@@ -1,0 +1,350 @@
+# Intégration continue : chaque PR, chaque push sur main, et appelé par release.yml.
+# Description des contrôles et de leur caractère bloquant : docs/10-ci-cd.md §3.
+#
+# Règles d'écriture (vérifiées par zizmor) : actions épinglées par SHA, permissions minimales
+# par job, aucun secret, aucune expression ${{ }} dans un script (passer par env).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  merge_group:
+  workflow_call:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  controles:
+    name: Contrôles maison et workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+      - name: Tests des scripts de contrôle
+        run: node --test 'scripts/ci/tests/*.test.mjs'
+      - name: Tests des règles Semgrep maison
+        run: scripts/ci/tool.sh semgrep semgrep --test --metrics=off .semgrep/
+      - name: Caddy sans journal (I2)
+        run: node scripts/ci/check-caddy-config.mjs deploy/Caddyfile
+      - name: actionlint
+        run: scripts/ci/tool.sh actionlint -color
+      - name: zizmor (sécurité des workflows)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TOOL_DOCKER_ARGS: -e GH_TOKEN
+        run: scripts/ci/tool.sh zizmor --min-severity=low .
+
+  secrets:
+    name: Secrets (gitleaks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Historique complet
+        run: scripts/ci/tool.sh gitleaks git --config .gitleaks.toml --redact --no-banner -v .
+
+  qualite:
+    name: Lint, types, tests unitaires
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm check
+      - run: pnpm test:unit --run
+
+  sast:
+    name: Analyse statique (Semgrep)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Exceptions nosemgrep déclarées (.semgrep/exceptions.txt)
+        run: |
+          grep -rl --include='*.ts' --include='*.js' --include='*.mjs' --include='*.svelte'             nosemgrep src scripts tests | sort >trouvees.txt || true
+          grep -v -e '^#' -e '^$' .semgrep/exceptions.txt | sort >declarees.txt
+          if ! diff -u declarees.txt trouvees.txt; then
+            echo "::error::nosemgrep hors de la liste relue (.semgrep/exceptions.txt)"
+            exit 1
+          fi
+      - name: Règles maison (bloquant)
+        run: scripts/ci/tool.sh semgrep semgrep scan --metrics=off --error --config .semgrep/maieutik.yml
+      - name: Règles communautaires (informatif)
+        run: >-
+          scripts/ci/tool.sh semgrep semgrep scan --metrics=off
+          --config p/javascript --config p/typescript --sarif-output=semgrep.sarif
+      - name: Publication dans Code scanning
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: semgrep.sarif
+          category: semgrep
+
+  dependances:
+    name: Dépendances vulnérables
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - name: pnpm audit (haute et critique)
+        run: pnpm audit --audit-level high
+      - name: osv-scanner (base OSV)
+        run: scripts/ci/tool.sh osv-scanner scan -L pnpm-lock.yaml
+
+  build:
+    name: Build ${{ matrix.variante }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    # Deux builds dans des conditions différentes : le code client doit être identique (D12).
+    strategy:
+      matrix:
+        include:
+          - variante: a
+            chemin: maieutik
+            fuseau: UTC
+          - variante: b
+            chemin: ailleurs/autre-nom
+            fuseau: Pacific/Kiritimati
+    defaults:
+      run:
+        working-directory: ${{ matrix.chemin }}
+    env:
+      VARIANTE: ${{ matrix.variante }}
+      TZ: ${{ matrix.fuseau }}
+      MAIEUTIK_VERSION: ci-${{ github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          path: ${{ matrix.chemin }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          package_json_file: ${{ matrix.chemin }}/package.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: ${{ matrix.chemin }}/.node-version
+          cache: pnpm
+          cache-dependency-path: ${{ matrix.chemin }}/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Manifeste du code client
+        run: >-
+          node scripts/ci/client-manifest.mjs generate build/client
+          --version "$MAIEUTIK_VERSION" --out "manifest-$VARIANTE.json"
+      - name: Ressources externes dans la sortie de build (I3)
+        if: matrix.variante == 'a'
+        run: node scripts/ci/check-external-resources.mjs build
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: manifest-${{ matrix.variante }}
+          path: ${{ matrix.chemin }}/manifest-${{ matrix.variante }}.json
+          retention-days: 7
+
+  reproductibilite:
+    name: Build reproductible
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: manifest-*
+          merge-multiple: true
+      - run: node scripts/ci/client-manifest.mjs compare manifest-a.json manifest-b.json
+
+  e2e:
+    name: E2E, invariants de vie privée, DAST
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      DATABASE_URL: postgres://maieutik:maieutik-ci@127.0.0.1:5432/maieutik
+      # Valeurs témoins : elles ne doivent apparaître ni dans les journaux ni dans la base.
+      CANARY_UA: maieutik-canari-ua-7f3a9c
+      CANARY_IP: 203.0.113.77
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Postgres (image et réglages de production)
+        run: |
+          secrets="$RUNNER_TEMP/secrets"
+          mkdir -p "$secrets"
+          printf 'maieutik-ci' >"$secrets/db_password"
+          {
+            echo "MAIEUTIK_SECRETS_DIR=$secrets"
+            echo "MAIEUTIK_IMAGE=non-utilisee"
+            echo "MAIEUTIK_DOMAIN=localhost"
+          } >>"$GITHUB_ENV"
+          MAIEUTIK_SECRETS_DIR=$secrets MAIEUTIK_IMAGE=non-utilisee MAIEUTIK_DOMAIN=localhost \
+            docker compose -f deploy/compose.yaml -f deploy/compose.ci.yaml up -d --wait db
+          node scripts/migrate.ts
+      - name: Tests Playwright
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          pnpm exec playwright test
+      - name: Ressources externes dans les pages servies (I3)
+        run: >-
+          node scripts/ci/check-external-resources.mjs test-results/pages build
+          --forbid-host localhost --forbid-host 127.0.0.1
+      - name: Serveur de production local
+        run: |
+          PORT=3000 HOST=127.0.0.1 nohup node build >"$RUNNER_TEMP/app.log" 2>&1 &
+          for _ in $(seq 1 60); do curl -fs -o /dev/null http://127.0.0.1:3000/ && exit 0; sleep 1; done
+          cat "$RUNNER_TEMP/app.log"
+          exit 1
+      - name: Canari - aucune donnée de requête journalisée ni stockée (I1, I11)
+        run: |
+          CANARY_BASE_URL=http://127.0.0.1:3000 pnpm exec playwright test -c tests/canari.config.ts
+          docker compose -f deploy/compose.yaml -f deploy/compose.ci.yaml exec -T db \
+            pg_dump -U maieutik maieutik >"$RUNNER_TEMP/dump.sql"
+          if grep -F -e "$CANARY_UA" -e "$CANARY_IP" "$RUNNER_TEMP/app.log" "$RUNNER_TEMP/dump.sql"; then
+            echo "::error::Donnée de requête retrouvée dans les journaux ou la base"
+            exit 1
+          fi
+      - name: DAST (OWASP ZAP, analyse passive)
+        run: |
+          mkdir -p zap && chmod 777 zap
+          TOOL_DOCKER_ARGS="--network host -v $PWD/zap:/zap/wrk:rw" scripts/ci/tool.sh zap \
+            zap-baseline.py -t http://127.0.0.1:3000 -I -r rapport-zap.html -J rapport-zap.json
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e
+          path: |
+            test-results/
+            zap/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  image:
+    name: Image, scan et pile complète
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      CANARY_UA: maieutik-canari-ua-7f3a9c
+      CANARY_IP: 203.0.113.77
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Pour le canari (requêtes signées, sans navigateur).
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Construction
+        env:
+          SHA: ${{ github.sha }}
+        run: docker build --build-arg MAIEUTIK_VERSION="ci-$SHA" -t maieutik:ci .
+      - name: Utilisateur non root
+        run: test "$(docker image inspect maieutik:ci --format '{{.Config.User}}')" = "65532:65532"
+      - name: Vulnérabilités de l'image (Trivy)
+        run: |
+          docker save maieutik:ci -o image.tar
+          scripts/ci/tool.sh trivy image --input image.tar --exit-code 1 \
+            --severity HIGH,CRITICAL --ignore-unfixed --no-progress
+      - name: Configuration Dockerfile (Trivy)
+        run: >-
+          scripts/ci/tool.sh trivy config --exit-code 1 --severity HIGH,CRITICAL
+          --skip-dirs node_modules .
+      - name: Pile complète (Caddy, application, Postgres)
+        run: |
+          secrets="$RUNNER_TEMP/secrets"
+          mkdir -p "$secrets"
+          printf 'maieutik-ci' >"$secrets/db_password"
+          head -c 32 /dev/urandom | base64 >"$secrets/session_key"
+          head -c 32 /dev/urandom | base64 | tr -d '=+/' >"$secrets/archiver_token"
+          {
+            echo "MAIEUTIK_SECRETS_DIR=$secrets"
+            echo "MAIEUTIK_IMAGE=maieutik:ci"
+            echo "MAIEUTIK_DOMAIN=localhost"
+          } >>"$GITHUB_ENV"
+          export MAIEUTIK_SECRETS_DIR=$secrets MAIEUTIK_IMAGE=maieutik:ci MAIEUTIK_DOMAIN=localhost
+          docker compose -f deploy/compose.yaml --profile tools run --rm migrate
+          docker compose -f deploy/compose.yaml up -d --wait
+      - name: Test de fumée à travers Caddy
+        run: |
+          id=$(docker create maieutik:ci)
+          docker cp "$id:/app/build/client-manifest.json" manifest.json
+          docker rm "$id" >/dev/null
+          root=$(node -p 'require("./manifest.json").root')
+          curl -fsSk https://localhost/.well-known/maieutik/build.json | tee build.json
+          test "$(node -p 'require("./build.json").root')" = "$root"
+      - name: Interface du robot jamais exposée par Caddy (I14)
+        run: |
+          # Même avec le bon jeton : c'est Caddy qui doit refuser, pas seulement l'application.
+          token=$(cat "$MAIEUTIK_SECRETS_DIR/archiver_token")
+          for path in /internal/archive/jobs /INTERNAL/archive/jobs //internal/archive/results /internal; do
+            status=$(curl -sk -o /dev/null -w '%{http_code}' -X POST               -H "Authorization: Bearer $token" "https://localhost$path")
+            [[ $status == 404 ]] || { echo "::error::clearnet $path : $status au lieu de 404"; exit 1; }
+            # Voie onion : port 8081, joignable seulement depuis le réseau Docker.
+            docker compose -f deploy/compose.yaml exec -T caddy wget -S -O /dev/null               --header "Authorization: Bearer $token" --post-data '' "http://127.0.0.1:8081$path" 2>&1               | grep -q ' 404 ' || { echo "::error::onion $path : pas de 404"; exit 1; }
+          done
+      - name: Canari à travers Caddy (I1, I2, I11)
+        run: |
+          CANARY_BASE_URL=https://localhost pnpm exec playwright test -c tests/canari.config.ts
+          docker compose -f deploy/compose.yaml logs --no-color >logs.txt
+          docker compose -f deploy/compose.yaml exec -T db pg_dump -U maieutik maieutik >dump.sql
+          if grep -F -e "$CANARY_UA" -e "$CANARY_IP" logs.txt dump.sql; then
+            echo "::error::Donnée de requête retrouvée dans les journaux des conteneurs ou la base"
+            exit 1
+          fi
+      - name: Journaux des conteneurs
+        if: failure()
+        run: docker compose -f deploy/compose.yaml logs --no-color --tail 200

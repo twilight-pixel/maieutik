@@ -1,0 +1,6 @@
+# Fichiers autorisés à contenir un commentaire `nosemgrep` (docs/09 §3).
+# Chaque exception est relue par l'équipe sécurité (CODEOWNERS sur .semgrep/) ;
+# la CI échoue si un fichier en contient un sans figurer ici, ou l'inverse.
+
+# Sortie de KaTeX injectée par {@html} : trust désactivé, macros bornées (D17).
+src/lib/components/Math.svelte

@@ -1,0 +1,12 @@
+# Remplace la liste par défaut de Semgrep : la reprendre ici.
+node_modules/
+build/
+dist/
+.svelte-kit/
+coverage/
+test-results/
+playwright-report/
+*.min.js
+
+# Cas de test volontairement fautifs des règles maison (vérifiés à part, voir docs/10).
+.semgrep/

@@ -1,0 +1,12 @@
+.git
+**/node_modules
+**/build
+**/.svelte-kit
+**/test-results
+**/playwright-report
+**/coverage
+**/.env
+**/.env.*
+deploy/
+docs/
+logo/
