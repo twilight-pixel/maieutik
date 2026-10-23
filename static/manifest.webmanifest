@@ -1,0 +1,14 @@
+{
+	"name": "Maieutik",
+	"short_name": "Maieutik",
+	"description": "Une bibliothèque vivante de débats écrits, organisée par disciplines.",
+	"start_url": "./",
+	"scope": "./",
+	"display": "standalone",
+	"lang": "fr",
+	"background_color": "#f7f6f3",
+	"theme_color": "#0e0e0e",
+	"icons": [
+		{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+	]
+}

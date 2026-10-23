@@ -1,0 +1,406 @@
+/*
+ * Thème Maieutik. Couleurs reprises du logo (encre #0E0E0E, papier #F7F6F3).
+ * Polices choisies pour la lisibilité, auto-hébergées (paquets @fontsource,
+ * servies depuis notre origine) : aucune police tierce (docs/03).
+ *  - Lexend : textes et titres, dessinée pour réduire la fatigue de lecture ;
+ *  - Inter : interface, neutre et compacte, s'accorde avec Lexend ;
+ *  - Atkinson Hyperlegible Mono : empreintes et code, 0/O et 1/l/I distincts.
+ * Lexend n'a pas d'italique : le navigateur incline la graisse romaine.
+ */
+@import '@fontsource-variable/lexend/wght.css';
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/inter/wght-italic.css';
+@import '@fontsource/atkinson-hyperlegible-mono/latin-400.css';
+@import '@fontsource/atkinson-hyperlegible-mono/latin-ext-400.css';
+
+:root {
+	/*
+	 * Couleurs. Papier chaud et encre un peu adoucie : ni noir pur ni blanc pur dans les
+	 * thèmes sombre et sépia, pour reposer les yeux pendant de longues lectures.
+	 * Contrastes visés : texte ≥ 4,5:1, composants ≥ 3:1 (vérifiés dans theme.spec.ts).
+	 */
+	--ink: #1d1c1a;
+	--paper: #f7f6f3;
+	--surface: #ffffff;
+	--muted: #5c5a55;
+	--line: #e3e0d8;
+	--field: #ffffff;
+	--field-line: #8a867d;
+	--accent: #1d1c1a;
+	--accent-ink: #f7f6f3;
+	--link: #2a4d9b;
+	--danger: #9b1c1c;
+
+	/* Natures de relation : toujours avec un glyphe et un libellé, jamais la couleur seule. */
+	--rel-refutes: #a8321f;
+	--rel-complements: #1f6f6a;
+	--rel-evidence: #3a6b2a;
+	--rel-reinterprets: #6a3fa0;
+	--rel-replies: #5c5a55;
+	--rel-translation: #2a5a9b;
+
+	--font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+	--font-reading: 'Lexend Variable', 'Inter Variable', system-ui, sans-serif;
+	--font-mono:
+		'Atkinson Hyperlegible Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+
+	/* Tailles de texte : six paliers (la taille de base du site est 17 px). */
+	--text-xs: 0.78rem;
+	--text-sm: 0.9rem;
+	--text-md: 1rem;
+	--text-read: calc(1.05rem * var(--reading-scale));
+	--text-lg: 1.25rem;
+	--text-xl: 1.5rem;
+
+	/* Rayons : champs et petits boutons, cartes et encadrés, boutons et puces. */
+	--r-sm: 0.375rem;
+	--r-md: 0.75rem;
+	--r-pill: 999px;
+	--radius: var(--r-md);
+
+	/* Espacements. */
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.5rem;
+	--space-6: 2rem;
+	--space-7: 3rem;
+	--space-8: 4.5rem;
+
+	/* Mouvement : court et discret ; neutralisé plus bas par prefers-reduced-motion. */
+	--ease: 120ms ease-out;
+
+	--measure: 54rem;
+	/*
+	 * Page de lecture : colonne de texte d'environ 65 caractères (≈ 41 rem en Lexend 17 px)
+	 * plus les marges latérales de .page. Au-delà de ~75 caractères, l'œil perd sa ligne.
+	 */
+	--page-reading: calc(var(--read-width) * var(--reading-scale) + 5rem);
+
+	/* Confort de lecture (menu « Aa ») : valeurs par défaut, modifiées par data-text-size, data-measure, data-leading. */
+	--reading-scale: 1;
+	--read-width: 41rem;
+	--reading-leading: 1.75;
+	color-scheme: light dark;
+}
+
+/*
+ * Thèmes : la préférence du système s'applique par défaut (et sans JavaScript).
+ * Un choix explicite pose data-theme="light|sepia|dark" sur <html>.
+ * Les valeurs sombres sont écrites deux fois (système, puis choix explicite).
+ */
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme]) {
+		--ink: #e4e1d9;
+		--paper: #141413;
+		--surface: #1c1c1a;
+		--muted: #a39f95;
+		--line: #2e2d2a;
+		--field: #222220;
+		--field-line: #7b786f;
+		--accent: #e4e1d9;
+		--accent-ink: #141413;
+		--link: #8fb0f5;
+		--danger: #f29b9b;
+
+		--rel-refutes: #f0a08f;
+		--rel-complements: #7fd0c8;
+		--rel-evidence: #a3d58f;
+		--rel-reinterprets: #c4a5ee;
+		--rel-replies: #a39f95;
+		--rel-translation: #9bbcf2;
+	}
+}
+
+:root[data-theme='light'] {
+	color-scheme: light;
+}
+
+/* Sépia : papier crème et encre brune, le plus doux pour lire longtemps en lumière ambiante. */
+:root[data-theme='sepia'] {
+	color-scheme: light;
+	--ink: #3b342a;
+	--paper: #f3ecdc;
+	--surface: #faf5e8;
+	--muted: #6e6556;
+	--line: #dccfb4;
+	--field: #fbf7ec;
+	--field-line: #8f8267;
+	--accent: #3b342a;
+	--accent-ink: #f3ecdc;
+	--link: #7a3b1e;
+	--danger: #9b1c1c;
+
+	--rel-refutes: #a8321f;
+	--rel-complements: #1f6f6a;
+	--rel-evidence: #3a6b2a;
+	--rel-reinterprets: #6a3fa0;
+	--rel-replies: #6e6556;
+	--rel-translation: #2a5a9b;
+}
+
+:root[data-theme='dark'] {
+	color-scheme: dark;
+	--ink: #e4e1d9;
+	--paper: #141413;
+	--surface: #1c1c1a;
+	--muted: #a39f95;
+	--line: #2e2d2a;
+	--field: #222220;
+	--field-line: #7b786f;
+	--accent: #e4e1d9;
+	--accent-ink: #141413;
+	--link: #8fb0f5;
+	--danger: #f29b9b;
+
+	--rel-refutes: #f0a08f;
+	--rel-complements: #7fd0c8;
+	--rel-evidence: #a3d58f;
+	--rel-reinterprets: #c4a5ee;
+	--rel-replies: #a39f95;
+	--rel-translation: #9bbcf2;
+}
+
+/*
+ * Confort de lecture : posé sur <html> par static/theme-init.js (avant le premier affichage)
+ * et par src/lib/client/reading-view.svelte.ts. La largeur suit la taille du texte pour garder
+ * le même nombre de caractères par ligne.
+ */
+:root[data-text-size='s'] {
+	--reading-scale: 0.9;
+}
+:root[data-text-size='l'] {
+	--reading-scale: 1.15;
+}
+:root[data-text-size='xl'] {
+	--reading-scale: 1.3;
+}
+:root[data-measure='narrow'] {
+	--read-width: 35rem;
+}
+:root[data-measure='wide'] {
+	--read-width: 49rem;
+}
+:root[data-leading='tight'] {
+	--reading-leading: 1.55;
+}
+:root[data-leading='loose'] {
+	--reading-leading: 1.95;
+}
+
+/*
+ * Contraste renforcé demandé par le système : texte atténué et filets plus marqués, calculés à
+ * partir de l'encre et du papier de chaque thème (donc valables en clair, sépia et sombre).
+ * `:root:root` a la spécificité des blocs de thème et vient après eux.
+ */
+@media (prefers-contrast: more) {
+	:root:root {
+		--muted: color-mix(in srgb, var(--ink) 90%, var(--paper));
+		--line: color-mix(in srgb, var(--ink) 45%, var(--paper));
+		--field-line: color-mix(in srgb, var(--ink) 70%, var(--paper));
+	}
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	/* 17 px par défaut : plus confortable que 16 px, et respecte le réglage du navigateur. */
+	font-size: 106.25%;
+	text-size-adjust: 100%;
+	-webkit-text-size-adjust: 100%;
+}
+
+html,
+body {
+	margin: 0;
+	background: var(--paper);
+	color: var(--ink);
+}
+
+body {
+	font-family: var(--font-sans);
+	line-height: 1.6;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3 {
+	font-family: var(--font-reading);
+	font-weight: 650;
+	line-height: 1.25;
+	letter-spacing: -0.005em;
+	text-wrap: balance;
+}
+
+/* Titre de page : identique partout (la landing et le titre d'un texte ont le leur). */
+h1 {
+	margin: 0 0 var(--space-2);
+	font-size: clamp(1.7rem, 3.5vw, 2.1rem);
+	letter-spacing: -0.015em;
+}
+
+a {
+	color: inherit;
+	text-underline-offset: 0.15em;
+}
+
+:focus-visible {
+	outline: 2px solid var(--link);
+	outline-offset: 2px;
+}
+
+/*
+ * Champs et boutons : un seul rendu pour toute l'interface, dans les deux thèmes.
+ * La bordure (--field-line) est plus marquée que --line (séparateurs) pour rester
+ * visible sur le papier comme sur les cartes. :where() garde une spécificité nulle :
+ * un composant peut ajuster la taille ou la forme sans réécrire les couleurs.
+ */
+:where(
+	input:not([type='checkbox'], [type='radio'], [type='file'], [type='range']),
+	select,
+	textarea
+) {
+	min-width: 0;
+	padding: var(--space-2) var(--space-3);
+	border: 1px solid var(--field-line);
+	border-radius: var(--r-sm);
+	background: var(--field);
+	color: var(--ink);
+	font: inherit;
+	font-weight: 400;
+}
+
+:where(input, select, textarea):hover:not(:disabled) {
+	border-color: var(--ink);
+}
+
+:where(
+	input:not([type='checkbox'], [type='radio'], [type='file']),
+	select,
+	textarea
+):focus-visible {
+	border-color: var(--ink);
+}
+
+:where(input, select, textarea)::placeholder {
+	color: var(--muted);
+	opacity: 1;
+}
+
+:where(input, select, textarea, button):disabled {
+	opacity: 0.55;
+	cursor: not-allowed;
+}
+
+:where(input[type='checkbox'], input[type='radio']) {
+	width: 1.05rem;
+	height: 1.05rem;
+	margin: var(--space-1) 0 0;
+	flex: none;
+	accent-color: var(--accent);
+}
+
+:where(input[type='file']) {
+	color: var(--ink);
+	font: inherit;
+}
+
+input[type='file']::file-selector-button {
+	margin-right: var(--space-3);
+	padding: var(--space-2) var(--space-4);
+	border: 1px solid var(--field-line);
+	border-radius: var(--r-pill);
+	background: var(--field);
+	color: var(--ink);
+	font: inherit;
+	cursor: pointer;
+}
+
+:where(button) {
+	color: inherit;
+	font: inherit;
+}
+
+/*
+ * Transitions : seules les propriétés visuelles qui changent au survol et au focus, sur 120 ms.
+ * :where() garde une spécificité nulle : un composant peut définir la sienne.
+ */
+:where(a, button, input, select, textarea, summary) {
+	transition:
+		color var(--ease),
+		background-color var(--ease),
+		border-color var(--ease),
+		opacity var(--ease);
+}
+
+/* Le changement de thème s'adoucit sur la page elle-même. */
+html,
+body {
+	transition:
+		background-color var(--ease),
+		color var(--ease);
+}
+
+.button {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	padding: var(--space-3) var(--space-5);
+	border: 1px solid var(--accent);
+	border-radius: var(--r-pill);
+	background: var(--accent);
+	color: var(--accent-ink);
+	font: inherit;
+	font-weight: 600;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.button.secondary {
+	background: transparent;
+	color: var(--ink);
+}
+
+.button:disabled {
+	cursor: not-allowed;
+}
+
+.button:hover:not(:disabled) {
+	opacity: 0.85;
+}
+
+.button.secondary:hover:not(:disabled) {
+	background: var(--surface);
+	opacity: 1;
+}
+
+.visually-hidden {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	* {
+		transition: none !important;
+		animation: none !important;
+	}
+}
+
+.page {
+	flex: 1;
+	width: 100%;
+	max-width: 80rem;
+	margin: 0 auto;
+	padding: 2rem clamp(1rem, 4vw, 2.5rem) 3rem;
+}
