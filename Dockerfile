@@ -25,7 +25,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
  && pnpm prune --prod
 
 # Exécution : distroless, sans shell ni gestionnaire de paquets, utilisateur non root.
-FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:78f07ef1b5ea71ad7c055df15d0dd8997f2d288f9158623c4d4ae3d765b7d50d
+FROM gcr.io/distroless/nodejs24-debian13:nonroot@sha256:cb606325b7ec4af55462cb0b424a53b452a5b4a894ffe841fcf1048d216fb9f8
 WORKDIR /app
 COPY --from=build /src/package.json ./
 COPY --from=build /src/node_modules ./node_modules
