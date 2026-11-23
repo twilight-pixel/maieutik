@@ -4,7 +4,7 @@
 # Build reproductible : mêmes sources + même MAIEUTIK_VERSION => même code client,
 # vérifié en CI par scripts/ci/client-manifest.mjs compare (D12).
 
-FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS build
+FROM node:26-trixie-slim@sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc AS build
 ENV PNPM_HOME=/pnpm CI=true
 # Version de pnpm lue dans le champ packageManager de package.json.
 RUN corepack enable
